@@ -1,3 +1,4 @@
+#include "esp_system.h"
 #include <Arduino.h>
 #include <RCSwitch.h>
 #include <timer.h>
@@ -18,6 +19,8 @@ void BlinkLamp();
 void LookingForMovement();
 void BlinkMovementDetectorLight();
 void BlinkMovementDetectorLightOff();
+void UpdateActualStatus();
+
 bool GetButton(int buttonsArray[], int buttonsSize, int receivedValue);
 bool RunGate = false;
 bool LedIsOn = false;
@@ -44,6 +47,7 @@ int limitSwitchBClose = 35;
 
 int timeOutForGates = 3000;
 int value = 0;
+
 Timer t1;
 Timer lightTimer;
 Timer movementDetectorLightTimer;
@@ -54,8 +58,9 @@ statusEnum previeusStatus = GateClosed;
 statusEnum actualStatus = GateClosed;
 
 void setup() {
+  Serial.println("MAIN LOOP...");
   mySwitch.enableReceive(0);
-  Serial.begin(9600);
+  Serial.begin(115200);
   pinMode(light, OUTPUT);
   pinMode(aEngineA, OUTPUT);
   pinMode(bEngineA, OUTPUT);
@@ -78,10 +83,13 @@ void setup() {
 void loop() {
   lightTimer.update();
   restartArduino.update();
+
   if (restartArduino.getElapsedTime() > 18000000)
   {
     Serial.println("Restarting...");
     ESP.restart();
+    
+    UpdateActualStatus();
   }
   
   movementDetectorLightTimer.update();
@@ -96,16 +104,16 @@ void loop() {
         mySwitch.resetAvailable();
         lightTimer.start();
     }
-  }
 
-  if (GetButton(cButtons, sizeof(cButtons)/sizeof(cButtons[0]), value)){
-    StopGates();
-    actualStatus = GateStopped;
-    mySwitch.resetAvailable();
-    RunGate = true;
+    if (GetButton(cButtons, sizeof(cButtons)/sizeof(cButtons[0]), value)){
+      StopGates();
+      actualStatus = GateStopped;
+      mySwitch.resetAvailable();
+      RunGate = true;
+    }
   }
-
-  if (RunGate){
+  
+  if (RunGate == true){
     LookingForMovement();
     
     switch (actualStatus) {
@@ -189,6 +197,21 @@ void loop() {
           t1.stop();
       break;
     }
+  }
+}
+
+void UpdateActualStatus(){
+  int limitSwitchAOpened = digitalRead(limitSwitchAOpen);
+  int limitSwitchBOpened = digitalRead(limitSwitchBOpen);
+  int limitSwitchAClosed = digitalRead(limitSwitchAClose);
+  int limitSwitchBClosed = digitalRead(limitSwitchBClose);
+
+  if (limitSwitchAOpened == HIGH && limitSwitchBOpened == HIGH){
+    actualStatus = GateOpened;
+  }
+
+  if (limitSwitchAClosed == HIGH && limitSwitchBClosed == HIGH){
+    actualStatus = GateClosed;
   }
 }
 
