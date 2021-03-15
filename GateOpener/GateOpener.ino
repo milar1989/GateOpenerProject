@@ -78,7 +78,7 @@ void setup() {
 void loop() {
   lightTimer.update();
   restartArduino.update();
-  if (restartArduino.getElapsedTime() > 60000)
+  if (restartArduino.getElapsedTime() > 18000000)
   {
     Serial.println("Restarting...");
     ESP.restart();
