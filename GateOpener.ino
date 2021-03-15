@@ -1,18 +1,13 @@
-//Wszystko w miare ale problem z czasem na pilocie
-
 #include <Arduino.h>
 #include <RCSwitch.h>
-#include <Timer.h>
-#include "timerManager.h"
+#include <timer.h>
 
 #define LED 2
 void OpenGateA();
 void OpenGateB();
-void OpenGates();
 void CloseGateA();
 void CloseGateB();
 void CloseGates();
-void StopGates();
 void StopGateA();
 void StopGateA_AfterOpening();
 void StopGateA_AfterClosing();
@@ -22,10 +17,12 @@ void StopGateB_AfterClosing();
 void BlinkLamp();
 void LookingForMovement();
 void BlinkMovementDetectorLight();
+void BlinkMovementDetectorLightOff();
 bool GetButton(int buttonsArray[], int buttonsSize, int receivedValue);
 bool RunGate = false;
 bool LedIsOn = false;
 bool MovementLedIsOn = false;
+bool MovementFound = false;
 
 RCSwitch mySwitch = RCSwitch();
 int aButtons[] = {11141684, 0};
@@ -50,6 +47,7 @@ int value = 0;
 Timer t1;
 Timer lightTimer;
 Timer movementDetectorLightTimer;
+Timer restartArduino;
 
 enum statusEnum { GateOpened, GateOpening, GateClosed, GateClosing, GateStopped, MovementDetected };
 statusEnum previeusStatus = GateClosed;
@@ -69,16 +67,24 @@ void setup() {
   pinMode(limitSwitchBOpen, INPUT);
   pinMode(limitSwitchBClose, INPUT);
   pinMode(movementDetector, INPUT);
+  restartArduino.start();
   lightTimer.setInterval(500);
   lightTimer.setCallback(BlinkLamp);
   movementDetectorLightTimer.setInterval(100);
   movementDetectorLightTimer.setCallback(BlinkMovementDetectorLight);
+  RunGate = false;
 }
 
 void loop() {
   lightTimer.update();
+  restartArduino.update();
+  if (restartArduino.getElapsedTime() > 60000)
+  {
+    Serial.println("Restarting...");
+    ESP.restart();
+  }
+  
   movementDetectorLightTimer.update();
-  LookingForMovement();
   if (mySwitch.available())
   {
     value = mySwitch.getReceivedValue();
@@ -100,9 +106,12 @@ void loop() {
   }
 
   if (RunGate){
+    LookingForMovement();
+    
     switch (actualStatus) {
       case GateClosed:
           Serial.println("Wszedłem w GateClosed.");
+          MovementFound = false;
           previeusStatus = GateClosed;
           OpenGateA();
           t1.update();
@@ -112,6 +121,7 @@ void loop() {
 
       case GateOpening:
           Serial.println("Wszedłem w GateOpening.");
+          MovementFound = false;
           if (digitalRead(limitSwitchBOpen) == HIGH){
             Serial.println("limitSwitchAOpen - HIGH");
             StopGateA_AfterOpening();
@@ -125,23 +135,24 @@ void loop() {
 
       case GateOpened:
           Serial.println("Wszedłem w GateOpened.");
-          CloseGateA();
+          MovementFound = false;
+          CloseGateB();
           t1.update();
           lightTimer.update();
-          t1.setCallback(CloseGateB);
+          t1.setCallback(CloseGateA);
           Serial.println(actualStatus);
       break;
 
       case GateClosing:
           Serial.println("Wszedłem w GateClosing.");
-  
+          MovementFound = false;
           if (digitalRead(limitSwitchBClose) == HIGH){
-            Serial.println("limitSwitchAClose - HIGH");
+            Serial.println("limitSwitchBClose - HIGH");
             StopGateA_AfterClosing();
           }
           
           if (digitalRead(limitSwitchAClose) == HIGH){
-            Serial.println("limitSwitchBClose - HIGH");
+            Serial.println("limitSwitchAClose - HIGH");
             StopGateB_AfterClosing();
           }
           
@@ -154,6 +165,7 @@ void loop() {
           actualStatus = previeusStatus;
           t1.stop();
           RunGate = false;
+          MovementFound = false;
       break;
 
       case MovementDetected:
@@ -162,6 +174,7 @@ void loop() {
           Serial.println(actualStatus);
           Serial.println("Previeus status:");
           Serial.println(previeusStatus);
+          MovementFound = true;
           if (previeusStatus == GateClosing){
             StopGateA_AfterClosing();
             StopGateB_AfterClosing();
@@ -191,9 +204,7 @@ void LookingForMovement(){
 }
 
 void BlinkMovementDetectorLight(){
-  if (RunGate == false || actualStatus == GateStopped){
-    MovementLedIsOn = false;
-    movementDetectorLightTimer.stop();
+  if (MovementFound == false){
     digitalWrite(movementDetectorLight, LOW);
   }
   else{
@@ -203,7 +214,7 @@ void BlinkMovementDetectorLight(){
     else{
       digitalWrite(movementDetectorLight, LOW);
     }
-
+  
     MovementLedIsOn = !MovementLedIsOn;
   }
 }
@@ -237,21 +248,15 @@ void OpenGateB(){
   actualStatus = GateOpening;
 }
 
-void OpenGates(){
-}
-
 void CloseGateA(){
   digitalWrite(aEngineA, LOW);
   digitalWrite(bEngineA, HIGH);
+  actualStatus = GateClosing;
 }
 
 void CloseGateB(){
   digitalWrite(aEngineB, LOW);
   digitalWrite(bEngineB, HIGH);
-  actualStatus = GateClosing;
-}
-
-void CloseGates(){
 }
 
 void StopGateA_AfterOpening(){
@@ -262,6 +267,10 @@ void StopGateA_AfterOpening(){
 void StopGateA_AfterClosing(){
   digitalWrite(aEngineA, LOW);
   digitalWrite(bEngineA, LOW);
+  previeusStatus = GateOpened;
+  actualStatus = GateClosed;
+  digitalWrite(light, LOW);
+  RunGate = false;
 }
 
 void StopGateA(){
@@ -285,11 +294,7 @@ void StopGateB(){
 
 void StopGateB_AfterClosing(){
   digitalWrite(aEngineB, LOW);
-  digitalWrite(bEngineB, LOW);
-  previeusStatus = GateOpened;
-  actualStatus = GateClosed;
-  digitalWrite(light, LOW);
-  RunGate = false;
+  digitalWrite(bEngineB, LOW); 
 }
 
 void StopGates(){
