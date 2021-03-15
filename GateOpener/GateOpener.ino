@@ -1,4 +1,7 @@
-#include "esp_system.h"
+#define BLYNK_PRINT Serial
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>#include "esp_system.h"
 #include <Arduino.h>
 #include <RCSwitch.h>
 #include <timer.h>
@@ -44,14 +47,22 @@ int limitSwitchAOpen = 19;
 int limitSwitchAClose = 21;
 int limitSwitchBOpen = 34;
 int limitSwitchBClose = 35;
+int blynkLed = 14;
+int RunGateFromBlynk = LOW;
 
 int timeOutForGates = 3000;
 int value = 0;
+int ledState = LOW;
+
+char auth[] = "ASMqdnbVDgcgceRohX3g8Re4MEUVnCMn";
+char ssid[] = "TP-LINK_Michal_Main";
+char pass[] = "michalintel!1";
 
 Timer t1;
 Timer lightTimer;
 Timer movementDetectorLightTimer;
 Timer restartArduino;
+BlynkTimer timer;
 
 enum statusEnum { GateOpened, GateOpening, GateClosed, GateClosing, GateStopped, MovementDetected };
 statusEnum previeusStatus = GateClosed;
@@ -72,15 +83,34 @@ void setup() {
   pinMode(limitSwitchBOpen, INPUT);
   pinMode(limitSwitchBClose, INPUT);
   pinMode(movementDetector, INPUT);
+  pinMode(blynkLed, OUTPUT);
   restartArduino.start();
   lightTimer.setInterval(500);
   lightTimer.setCallback(BlinkLamp);
   movementDetectorLightTimer.setInterval(100);
   movementDetectorLightTimer.setCallback(BlinkMovementDetectorLight);
   RunGate = false;
+  RunGateFromBlynk = LOW;
+  Blynk.begin(auth, ssid, pass);
+  timer.setInterval(100L, checkPhysicalGateState);
+}
+
+BLYNK_CONNECTED() {
+  // Request the latest state from the server
+  Blynk.syncVirtual(V0);
+
+  // Alternatively, you could override server state using:
+  //Blynk.virtualWrite(V2, ledState);
+}
+
+// When App button is pushed - switch the state
+BLYNK_WRITE(V0) {
+  RunGateFromBlynk = param.asInt();
 }
 
 void loop() {
+  Blynk.run();
+  timer.run();
   lightTimer.update();
   restartArduino.update();
 
@@ -93,10 +123,20 @@ void loop() {
   }
   
   movementDetectorLightTimer.update();
+  
+  if (RunGateFromBlynk == HIGH){
+    Serial.println("Dostałem sygnał z guzika!");
+    t1.setTimeout(timeOutForGates);
+    t1.start();
+    lightTimer.start();
+    RunGate = true;
+    UpdateActualStatus();
+  }
+  
   if (mySwitch.available())
   {
     value = mySwitch.getReceivedValue();
-    if (GetButton(aButtons, sizeof(aButtons)/sizeof(aButtons[0]), value)){
+    if (GetButton(aButtons, sizeof(aButtons)/sizeof(aButtons[0]), value) || RunGateFromBlynk == HIGH){
         Serial.println("Dostałem sygnał z guzika!");
         t1.setTimeout(timeOutForGates);
         t1.start();
@@ -173,6 +213,7 @@ void loop() {
           actualStatus = previeusStatus;
           t1.stop();
           RunGate = false;
+          RunGateFromBlynk = LOW;
           MovementFound = false;
       break;
 
@@ -197,6 +238,23 @@ void loop() {
           t1.stop();
       break;
     }
+  }
+}
+
+void checkPhysicalGateState()
+{
+  if (digitalRead(limitSwitchBOpen) == LOW) {
+    Blynk.virtualWrite(V1, LOW);
+  }
+  else{
+    Blynk.virtualWrite(V1, HIGH);
+  }
+    
+  if (digitalRead(limitSwitchAOpen) == LOW) {
+    Blynk.virtualWrite(V2, LOW);
+  }
+  else{
+    Blynk.virtualWrite(V2, HIGH);
   }
 }
 
@@ -294,6 +352,7 @@ void StopGateA_AfterClosing(){
   actualStatus = GateClosed;
   digitalWrite(light, LOW);
   RunGate = false;
+  RunGateFromBlynk = LOW;
 }
 
 void StopGateA(){
@@ -308,6 +367,7 @@ void StopGateB_AfterOpening(){
   actualStatus = GateOpened;
   digitalWrite(light, LOW);
   RunGate = false;
+  RunGateFromBlynk = LOW;
 }
 
 void StopGateB(){
@@ -325,6 +385,7 @@ void StopGates(){
   StopGateB();
   digitalWrite(light, LOW);
   RunGate = false;
+  RunGateFromBlynk = LOW;
 }
 
 bool GetButton(int buttonsArray[], int buttonsSize, int receivedValue){
