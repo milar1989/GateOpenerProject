@@ -56,7 +56,7 @@ int ledState = LOW;
 
 char auth[] = "ASMqdnbVDgcgceRohX3g8Re4MEUVnCMn";
 char ssid[] = "TP-LINK_Michal_Main";
-char pass[] = "michalintel!1";
+char pass[] = "password";
 
 Timer t1;
 Timer lightTimer;
@@ -70,7 +70,7 @@ statusEnum actualStatus = GateClosed;
 
 void setup() {
   Serial.println("MAIN LOOP...");
-  mySwitch.enableReceive(0);
+  mySwitch.enableReceive(13);
   Serial.begin(115200);
   pinMode(light, OUTPUT);
   pinMode(aEngineA, OUTPUT);
@@ -91,8 +91,8 @@ void setup() {
   movementDetectorLightTimer.setCallback(BlinkMovementDetectorLight);
   RunGate = false;
   RunGateFromBlynk = LOW;
-  Blynk.begin(auth, ssid, pass);
-  timer.setInterval(100L, checkPhysicalGateState);
+  //Blynk.begin(auth, ssid, pass);
+  //timer.setInterval(100L, checkPhysicalGateState);
 }
 
 BLYNK_CONNECTED() {
@@ -109,8 +109,8 @@ BLYNK_WRITE(V0) {
 }
 
 void loop() {
-  Blynk.run();
-  timer.run();
+  //Blynk.run();
+  //timer.run();
   lightTimer.update();
   restartArduino.update();
 
@@ -224,13 +224,12 @@ void loop() {
           Serial.println("Previeus status:");
           Serial.println(previeusStatus);
           MovementFound = true;
-          if (previeusStatus == GateClosing){
+          if (previeusStatus == GateClosed || previeusStatus == GateClosing){
             StopGateA_AfterClosing();
             StopGateB_AfterClosing();
           }
 
-          if (previeusStatus == GateOpening)
-          {
+          if (previeusStatus == GateOpened || previeusStatus == GateOpening){
             StopGateA_AfterOpening();
             StopGateB_AfterOpening();
           }
@@ -319,25 +318,35 @@ void BlinkLamp(){
 }
 
 void OpenGateA(){
-  digitalWrite(aEngineA, HIGH);
-  digitalWrite(bEngineA, LOW);
+  if (digitalRead(limitSwitchBOpen) == LOW){
+    digitalWrite(aEngineA, HIGH);
+    digitalWrite(bEngineA, LOW);
+  }
 }
 
 void OpenGateB(){
-  digitalWrite(aEngineB, HIGH);
-  digitalWrite(bEngineB, LOW);
+  if (digitalRead(limitSwitchAOpen) == LOW){
+    digitalWrite(aEngineB, HIGH);
+    digitalWrite(bEngineB, LOW);
+  }
+  
   actualStatus = GateOpening;
 }
 
 void CloseGateA(){
-  digitalWrite(aEngineA, LOW);
-  digitalWrite(bEngineA, HIGH);
+  if (digitalRead(limitSwitchBClose) == LOW){
+    digitalWrite(aEngineA, LOW);
+    digitalWrite(bEngineA, HIGH);
+  }
+  
   actualStatus = GateClosing;
 }
 
 void CloseGateB(){
-  digitalWrite(aEngineB, LOW);
-  digitalWrite(bEngineB, HIGH);
+  if (digitalRead(limitSwitchAClose) == LOW){
+    digitalWrite(aEngineB, LOW);
+    digitalWrite(bEngineB, HIGH);
+  }
 }
 
 void StopGateA_AfterOpening(){
